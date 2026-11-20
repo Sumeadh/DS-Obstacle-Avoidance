@@ -29,15 +29,15 @@
 
     <model name="experiment_obstacle">
       <static>true</static>
-      <pose>0.65 -0.24 0.60 0 0 0</pose>
+      <pose>0.65 0.00 0.60 0 0 0</pose>
       <link name="barrier">
-        <collision name="collision">
+        <!-- <collision name="collision">
           <geometry>
             <box>
               <size>0.70 0.10 0.20</size>
             </box>
           </geometry>
-        </collision>
+        </collision> -->
         <visual name="visual">
           <geometry>
             <box>
@@ -73,7 +73,7 @@
 
     <model name="goal_marker">
       <static>true</static>
-      <pose>0.403 -0.463 0.543 0 0 0</pose>
+      <pose>0.603 -0.363 0.543 0 0 0</pose>
       <link name="marker">
         <visual name="visual">
           <geometry>

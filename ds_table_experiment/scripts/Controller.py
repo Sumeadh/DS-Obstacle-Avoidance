@@ -3,7 +3,11 @@
 from math import hypot, isfinite
 
 import rclpy
-from algorithms.nominal_ds import compute_velocity
+from algorithms.nominal_ds import (
+    cap_velocity,
+    compute_velocity,
+    modulate_velocity_ellipsoid,
+)
 from geometry_msgs.msg import Pose, TwistStamped
 from moveit_msgs.msg import CollisionObject, ObjectColor, PlanningScene
 from moveit_msgs.srv import ApplyPlanningScene
@@ -23,7 +27,10 @@ class Controller(Node):
             "end_effector_link",
             "obstacle_size",
             "obstacle_center",
-            "goal_offset",
+            "obstacle_safety_margin",
+            "obstacle_reactivity",
+            "obstacle_tail_effect",
+            "goal_position",
             "gain",
             "speed_limit",
             "control_period",
@@ -50,7 +57,7 @@ class Controller(Node):
         )
         self.servo_timer.cancel()
         self.servo_steps = 0
-        self.goal: tuple[float, float] | None = None
+        self.goal: tuple[float, float, float] | None = None
         self.stage = "waiting"
         self.timer = self.create_timer(0.5, self.start_when_ready)
 
@@ -74,15 +81,23 @@ class Controller(Node):
     def start(self):
         self.obstacle_size = self.get_parameter("obstacle_size").value
         self.obstacle_center = self.get_parameter("obstacle_center").value
-        self.goal_offset = self.get_parameter("goal_offset").value
+        self.obstacle_safety_margin = self.get_parameter(
+            "obstacle_safety_margin"
+        ).value
+        self.obstacle_reactivity = self.get_parameter("obstacle_reactivity").value
+        self.goal_position = self.get_parameter("goal_position").value
         if (
             len(self.obstacle_size) != 3
             or len(self.obstacle_center) != 3
-            or len(self.goal_offset) != 2
+            or len(self.goal_position) != 3
             or not all(isfinite(value) for value in self.obstacle_size)
             or not all(isfinite(value) for value in self.obstacle_center)
-            or not all(isfinite(value) for value in self.goal_offset)
+            or not all(isfinite(value) for value in self.goal_position)
             or any(value <= 0.0 for value in self.obstacle_size)
+            or not isfinite(self.obstacle_safety_margin)
+            or self.obstacle_safety_margin < 0.0
+            or not isfinite(self.obstacle_reactivity)
+            or self.obstacle_reactivity <= 0.0
             or not all(
                 isfinite(self.get_parameter(name).value)
                 and self.get_parameter(name).value > 0.0
@@ -96,9 +111,16 @@ class Controller(Node):
             or self.get_parameter("control_period").value >= 0.1
             or self.get_parameter("maximum_steps").value <= 0
         ):
-            self.stop("Obstacle dimensions, goal offset, or velocity parameters are invalid.")
+            self.stop(
+                "Obstacle dimensions, avoidance parameters, goal position, "
+                "or velocity parameters are invalid."
+            )
             return
-        self.add_obstacle()
+        #self.add_obstacle()
+        self.stage = "starting_servo"
+        self.start_servo_client.call_async(
+            Trigger.Request()
+        ).add_done_callback(self.on_servo_started)
 
     # Add only the red block to MoveIt's collision scene.
     def add_obstacle(self):
@@ -165,13 +187,11 @@ class Controller(Node):
                 f"Starting tool position: "
                 f"({position.x:.3f}, {position.y:.3f}, {position.z:.3f}) m."
             )
-            self.goal = (
-                position.x + self.goal_offset[0],
-                position.y + self.goal_offset[1],
-            )
+            self.goal = tuple(self.goal_position)
             self.get_logger().info(
                 f"Velocity-control goal B: "
-                f"({self.goal[0]:.3f}, {self.goal[1]:.3f}) m."
+                f"({self.goal[0]:.3f}, {self.goal[1]:.3f}, "
+                f"{self.goal[2]:.3f}) m."
             )
             self.stage = "servoing"
             self.servo_timer.reset()
@@ -192,13 +212,18 @@ class Controller(Node):
             transform = self.tf_buffer.lookup_transform(
                 self.planning_frame, self.end_effector_link, Time()
             ).transform
-            current = (transform.translation.x, transform.translation.y)
+            current = (
+                transform.translation.x,
+                transform.translation.y,
+                transform.translation.z,
+            )
             distance = hypot(
                 self.goal[0] - current[0],
                 self.goal[1] - current[1],
+                self.goal[2] - current[2],
             )
             if distance <= float(self.get_parameter("position_tolerance").value):
-                self.publish_twist(0.0, 0.0)
+                self.publish_twist(0.0, 0.0, 0.0)
                 self.servo_timer.cancel()
                 self.stage = "complete"
                 self.get_logger().info("Velocity-controlled task reached B.")
@@ -210,16 +235,33 @@ class Controller(Node):
                 float(self.get_parameter("gain").value),
                 float(self.get_parameter("speed_limit").value),
             )
-            self.publish_twist(velocity[0], velocity[1])
+            obstacle_semi_axes = tuple(
+                (3.0 ** 0.5) * dimension / 2.0 + self.obstacle_safety_margin
+                for dimension in self.obstacle_size
+            )
+            velocity = modulate_velocity_ellipsoid(
+                current,
+                velocity,
+                self.obstacle_center,
+                obstacle_semi_axes,
+                reactivity=self.obstacle_reactivity,
+                tail_effect=self.get_parameter("obstacle_tail_effect").value,
+            )
+            velocity = cap_velocity(
+                velocity,
+                float(self.get_parameter("speed_limit").value),
+            )
+            self.publish_twist(velocity[0], velocity[1], velocity[2])
         except Exception as error:
             self.stop(str(error))
 
-    def publish_twist(self, x, y):
+    def publish_twist(self, x, y, z):
         command = TwistStamped()
         command.header.stamp = self.get_clock().now().to_msg()
         command.header.frame_id = self.planning_frame
         command.twist.linear.x = x
         command.twist.linear.y = y
+        command.twist.linear.z = z
         self.servo_commands.publish(command)
 
     def stop(self, message):
@@ -228,7 +270,7 @@ class Controller(Node):
         self.get_logger().error(message)
         self.servo_timer.cancel()
         if was_servoing:
-            self.publish_twist(0.0, 0.0)
+            self.publish_twist(0.0, 0.0, 0.0)
 
 
 def main(args=None):

@@ -3,8 +3,11 @@ controller:
     planning_frame: base_link
     end_effector_link: tool0
     obstacle_size: [0.70, 0.10, 0.20]
-    obstacle_center: [0.65, -0.24, 0.60]
-    goal_offset: [0.0, -1.05]
+    obstacle_center: [0.65, 0.00, 0.60]
+    obstacle_safety_margin: 0.2
+    obstacle_reactivity: 1.0
+    obstacle_tail_effect: false
+    goal_position: [0.603, -0.363, 0.543]
     gain: 0.75
     speed_limit: 0.10
     control_period: 0.02

@@ -44,8 +44,9 @@ poses in `worlds/table.world` if the initial arm pose changes.
 
 Tune the controller in `config/controller_params.yaml`: `gain`, `speed_limit`,
 `control_period`, `position_tolerance`, `maximum_steps`, the MoveIt obstacle
-dimensions and position, and `goal_offset` (relative X/Y meters from the
-measured tool start). The Gazebo obstacle and table remain defined in
+dimensions and position, and `goal_offset` (relative X/Y/Z meters from the
+measured tool start). The controller sends linear velocity commands in X, Y,
+and Z; angular velocity remains zero. The Gazebo obstacle and table remain defined in
 `worlds/table.world`; keep the obstacle values synchronized if you change them.
 The `initial_positions` section in the same config sets the six robot joint
 angles in radians. The launch file supplies those values to the URDF's
