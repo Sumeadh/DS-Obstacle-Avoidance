@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+  <world name="table_experiment">
+  <gravity>0 0 0</gravity>
+    <include>
+      <uri>model://sun</uri>
+    </include>
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <model name="experiment_table">
+      <static>true</static>
+      <pose>0.65 0 0.45 0 0 0</pose>
+      <link name="table">
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.70 2.00 0.10</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.32 0.34 0.37 1</ambient>
+            <diffuse>0.48 0.50 0.54 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="experiment_obstacle">
+      <static>true</static>
+      <pose>0.65 -0.24 0.60 0 0 0</pose>
+      <link name="barrier">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.70 0.10 0.20</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.70 0.10 0.20</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.75 0.18 0.12 1</ambient>
+            <diffuse>0.9 0.24 0.16 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="start_marker">
+      <static>true</static>
+      <pose>0.403 0.587 0.543 0 0 0</pose>
+      <link name="marker">
+        <visual name="visual">
+          <geometry>
+            <sphere>
+              <radius>0.025</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>1.0 0.35 0.0 1</ambient>
+            <diffuse>1.0 0.45 0.0 1</diffuse>
+            <emissive>0.8 0.2 0.0 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="goal_marker">
+      <static>true</static>
+      <pose>0.403 -0.463 0.543 0 0 0</pose>
+      <link name="marker">
+        <visual name="visual">
+          <geometry>
+            <sphere>
+              <radius>0.025</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>0.0 0.8 0.1 1</ambient>
+            <diffuse>0.0 1.0 0.2 1</diffuse>
+            <emissive>0.0 0.5 0.05 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

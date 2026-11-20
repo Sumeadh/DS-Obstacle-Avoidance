@@ -1,0 +1,20 @@
+controller:
+  ros__parameters:
+    planning_frame: base_link
+    end_effector_link: tool0
+    obstacle_size: [0.70, 0.10, 0.20]
+    obstacle_center: [0.65, -0.24, 0.60]
+    goal_offset: [0.0, -1.05]
+    gain: 0.75
+    speed_limit: 0.10
+    control_period: 0.02
+    position_tolerance: 0.005
+    maximum_steps: 3000
+
+initial_positions:
+  shoulder_pan_joint: -1.9820006155724315
+  shoulder_lift_joint: -2.1283156591759536
+  elbow_joint: -0.7062423600308758
+  wrist_1_joint: -1.871271656462187
+  wrist_2_joint: 1.5550389926520554
+  wrist_3_joint: 1.1125002053251904
