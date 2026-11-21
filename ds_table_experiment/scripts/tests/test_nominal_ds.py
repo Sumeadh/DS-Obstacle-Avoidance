@@ -4,7 +4,7 @@ from math import hypot, sqrt
 from algorithms.nominal_ds import (
     cap_velocity,
     compute_velocity,
-    modulate_velocity_ellipsoid,
+    modulate_velocity,
     nominal_path,
 )
 
@@ -22,28 +22,29 @@ class NominalDSTests(unittest.TestCase):
         self.assertAlmostEqual(velocity[2], 1.0 / 3.0)
 
     def test_ellipsoid_modulation_reduces_inward_normal_velocity(self):
-        velocity = modulate_velocity_ellipsoid(
+        velocity, diagnostics = modulate_velocity(
             (1.5, 0.0, 0.0),
             (-1.0, 0.0, 0.0),
             (0.0, 0.0, 0.0),
             (1.0, 1.0, 1.0),
         )
-        self.assertAlmostEqual(velocity[0], -5.0 / 9.0)
-        self.assertAlmostEqual(velocity[1], 0.0)
-        self.assertAlmostEqual(velocity[2], 0.0)
+        self.assertAlmostEqual(float(velocity[0]), -5.0 / 9.0)
+        self.assertAlmostEqual(float(velocity[1]), 0.0)
+        self.assertAlmostEqual(float(velocity[2]), 0.0)
+        self.assertAlmostEqual(float(diagnostics["Gamma"]), 2.25)
 
     def test_ellipsoid_modulation_preserves_outward_normal_velocity_without_tail(self):
-        velocity = modulate_velocity_ellipsoid(
+        velocity, _ = modulate_velocity(
             (1.5, 0.0, 0.0),
             (1.0, 0.0, 0.0),
             (0.0, 0.0, 0.0),
             (1.0, 1.0, 1.0),
         )
-        self.assertAlmostEqual(velocity[0], 1.0)
+        self.assertAlmostEqual(float(velocity[0]), 1.0)
 
     def test_ellipsoid_modulation_rejects_position_at_obstacle_center(self):
         with self.assertRaises(ValueError):
-            modulate_velocity_ellipsoid(
+            modulate_velocity(
                 (0.0, 0.0, 0.0),
                 (1.0, 0.0, 0.0),
                 (0.0, 0.0, 0.0),
@@ -66,7 +67,7 @@ class NominalDSTests(unittest.TestCase):
             if hypot(*(target - current for current, target in zip(position, goal))) <= 0.005:
                 break
             nominal = compute_velocity(position, goal, 0.75, 0.10)
-            modulated = modulate_velocity_ellipsoid(
+            modulated, _ = modulate_velocity(
                 position, nominal, center, semi_axes
             )
             velocity = cap_velocity(modulated, 0.10)

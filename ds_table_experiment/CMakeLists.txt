@@ -12,6 +12,7 @@ install(
   PROGRAMS
     scripts/Controller.py
     scripts/AddTable.py
+    scripts/target_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

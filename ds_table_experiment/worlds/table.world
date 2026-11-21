@@ -73,7 +73,7 @@
 
     <model name="goal_marker">
       <static>true</static>
-      <pose>0.603 -0.363 0.543 0 0 0</pose>
+      <pose>0.403 -0.363 0.543 0 0 0</pose>
       <link name="marker">
         <visual name="visual">
           <geometry>

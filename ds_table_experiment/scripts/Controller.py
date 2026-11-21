@@ -6,15 +6,16 @@ import rclpy
 from algorithms.nominal_ds import (
     cap_velocity,
     compute_velocity,
-    modulate_velocity_ellipsoid,
+    modulate_velocity,
 )
-from geometry_msgs.msg import Pose, TwistStamped
+from geometry_msgs.msg import PointStamped, Pose, TwistStamped
 from moveit_msgs.msg import CollisionObject, ObjectColor, PlanningScene
 from moveit_msgs.srv import ApplyPlanningScene
 from rclpy.node import Node
 from rclpy.time import Time
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA
+from visualization_msgs.msg import Marker
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
 
@@ -28,6 +29,7 @@ class Controller(Node):
             "obstacle_size",
             "obstacle_center",
             "obstacle_safety_margin",
+            "obstacle_safety_factor",
             "obstacle_reactivity",
             "obstacle_tail_effect",
             "goal_position",
@@ -52,12 +54,20 @@ class Controller(Node):
         self.servo_commands = self.create_publisher(
             TwistStamped, "/servo_node/delta_twist_cmds", 10
         )
+        self.target_marker_pub = self.create_publisher(
+            Marker, "/experiment/target_marker", 10
+        )
         self.servo_timer = self.create_timer(
             float(self.get_parameter("control_period").value), self.servo_step
         )
         self.servo_timer.cancel()
+        self.target_subscription = self.create_subscription(
+            PointStamped, "/new_target", self.target_callback, 10
+        )
         self.servo_steps = 0
         self.goal: tuple[float, float, float] | None = None
+        self.minimum_obstacle_clearance = float("inf")
+        self.final_goal_error = float("inf")
         self.stage = "waiting"
         self.timer = self.create_timer(0.5, self.start_when_ready)
 
@@ -75,7 +85,7 @@ class Controller(Node):
             return
 
         self.timer.cancel()
-        self.get_logger().info("Adding the obstacle and starting the task.")
+        self.get_logger().info("Starting the target-tracking experiment.")
         self.start()
 
     def start(self):
@@ -84,18 +94,24 @@ class Controller(Node):
         self.obstacle_safety_margin = self.get_parameter(
             "obstacle_safety_margin"
         ).value
+        self.obstacle_safety_factor = self.get_parameter(
+            "obstacle_safety_factor"
+        ).value
         self.obstacle_reactivity = self.get_parameter("obstacle_reactivity").value
         self.goal_position = self.get_parameter("goal_position").value
         if (
             len(self.obstacle_size) != 3
             or len(self.obstacle_center) != 3
+            or len(self.obstacle_safety_factor) != 3
             or len(self.goal_position) != 3
             or not all(isfinite(value) for value in self.obstacle_size)
             or not all(isfinite(value) for value in self.obstacle_center)
+            or not all(isfinite(value) for value in self.obstacle_safety_factor)
             or not all(isfinite(value) for value in self.goal_position)
             or any(value <= 0.0 for value in self.obstacle_size)
             or not isfinite(self.obstacle_safety_margin)
             or self.obstacle_safety_margin < 0.0
+            or any(value < 1.0 for value in self.obstacle_safety_factor)
             or not isfinite(self.obstacle_reactivity)
             or self.obstacle_reactivity <= 0.0
             or not all(
@@ -187,9 +203,9 @@ class Controller(Node):
                 f"Starting tool position: "
                 f"({position.x:.3f}, {position.y:.3f}, {position.z:.3f}) m."
             )
-            self.goal = tuple(self.goal_position)
+            self.goal = tuple(float(value) for value in self.goal_position)
             self.get_logger().info(
-                f"Velocity-control goal B: "
+                f"Initial target B: "
                 f"({self.goal[0]:.3f}, {self.goal[1]:.3f}, "
                 f"{self.goal[2]:.3f}) m."
             )
@@ -199,13 +215,72 @@ class Controller(Node):
         except Exception as error:
             self.stop(str(error))
 
-    def servo_step(self):
-        if self.stage != "servoing" or self.goal is None:
+    def target_callback(self, message: PointStamped):
+        if message.header.frame_id and message.header.frame_id != self.planning_frame:
+            self.get_logger().error(
+                f"Ignoring target in frame '{message.header.frame_id}'. "
+                f"Expected '{self.planning_frame}'."
+            )
             return
 
-        self.servo_steps += 1
-        if self.servo_steps > int(self.get_parameter("maximum_steps").value):
-            self.stop("Velocity control timed out before reaching B.")
+        target = (
+            float(message.point.x),
+            float(message.point.y),
+            float(message.point.z),
+        )
+        if not all(isfinite(value) for value in target):
+            self.get_logger().error("Ignoring target containing non-finite values.")
+            return
+
+        previous_goal = self.goal
+        self.goal = target
+        self.servo_steps = 0
+        label = "C" if previous_goal is not None else "initial"
+        self.get_logger().info(
+            f"Received new target {label}: "
+            f"({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f}) m."
+        )
+        self.publish_target_marker(target)
+
+    def publish_target_marker(self, target):
+        """Show the latest commanded target as a green sphere in RViz."""
+        marker = Marker()
+        marker.header.frame_id = self.planning_frame
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "experiment_target"
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = target[0]
+        marker.pose.position.y = target[1]
+        marker.pose.position.z = target[2]
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.04
+        marker.scale.y = 0.04
+        marker.scale.z = 0.04
+        marker.color.r = 0.1
+        marker.color.g = 1.0
+        marker.color.b = 0.1
+        marker.color.a = 1.0
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        self.target_marker_pub.publish(marker)
+
+    def obstacle_clearance(self, position):
+        """Signed distance from the tool point to the physical box surface."""
+        half = tuple(float(size) / 2.0 for size in self.obstacle_size)
+        offset = tuple(
+            abs(float(value) - float(center)) - extent
+            for value, center, extent in zip(
+                position, self.obstacle_center, half
+            )
+        )
+        outside = hypot(*(max(value, 0.0) for value in offset))
+        inside = min(max(offset), 0.0)
+        return outside + inside
+
+    def servo_step(self):
+        if self.stage != "servoing" or self.goal is None:
             return
 
         try:
@@ -217,16 +292,27 @@ class Controller(Node):
                 transform.translation.y,
                 transform.translation.z,
             )
+
+            clearance = self.obstacle_clearance(current)
+            self.minimum_obstacle_clearance = min(
+                self.minimum_obstacle_clearance, clearance
+            )
+
             distance = hypot(
                 self.goal[0] - current[0],
                 self.goal[1] - current[1],
                 self.goal[2] - current[2],
             )
+            self.final_goal_error = distance
+
             if distance <= float(self.get_parameter("position_tolerance").value):
+                # Keep the timer alive: hold here until another target arrives.
                 self.publish_twist(0.0, 0.0, 0.0)
-                self.servo_timer.cancel()
-                self.stage = "complete"
-                self.get_logger().info("Velocity-controlled task reached B.")
+                return
+
+            self.servo_steps += 1
+            if self.servo_steps > int(self.get_parameter("maximum_steps").value):
+                self.stop("Velocity control timed out before reaching the current target.")
                 return
 
             velocity = compute_velocity(
@@ -235,15 +321,28 @@ class Controller(Node):
                 float(self.get_parameter("gain").value),
                 float(self.get_parameter("speed_limit").value),
             )
-            obstacle_semi_axes = tuple(
-                (3.0 ** 0.5) * dimension / 2.0 + self.obstacle_safety_margin
-                for dimension in self.obstacle_size
+
+            # The experiment uses the current Z-stretched ellipsoid model.
+            top_of_box = self.obstacle_center[2] + (self.obstacle_size[2] / 2.0)
+            obstacle_semi_axes = (
+                (3.0 ** 0.5) * self.obstacle_size[0] / 2.0
+                + self.obstacle_safety_margin,
+                (3.0 ** 0.5) * self.obstacle_size[1] / 2.0
+                + self.obstacle_safety_margin,
+                top_of_box + self.obstacle_safety_margin,
             )
-            velocity = modulate_velocity_ellipsoid(
+            obs_center_math = (
+                self.obstacle_center[0],
+                self.obstacle_center[1],
+                0.0,
+            )
+
+            velocity, _ = modulate_velocity(
                 current,
                 velocity,
-                self.obstacle_center,
+                obs_center_math,
                 obstacle_semi_axes,
+                safety_factor=self.obstacle_safety_factor,
                 reactivity=self.obstacle_reactivity,
                 tail_effect=self.get_parameter("obstacle_tail_effect").value,
             )
@@ -263,6 +362,28 @@ class Controller(Node):
         command.twist.linear.y = y
         command.twist.linear.z = z
         self.servo_commands.publish(command)
+
+    def report_metrics(self):
+        if self.final_goal_error != float("inf"):
+            self.get_logger().info(
+                f"Final goal error: {self.final_goal_error:.4f} m"
+            )
+        else:
+            self.get_logger().info("Final goal error: unavailable (no servo feedback).")
+
+        if self.minimum_obstacle_clearance != float("inf"):
+            self.get_logger().info(
+                "Minimum tool-point clearance from physical obstacle: "
+                f"{self.minimum_obstacle_clearance:.4f} m"
+            )
+        else:
+            self.get_logger().info("Minimum obstacle clearance: unavailable.")
+
+    def destroy_node(self):
+        if self.stage == "servoing":
+            self.publish_twist(0.0, 0.0, 0.0)
+        self.report_metrics()
+        return super().destroy_node()
 
     def stop(self, message):
         was_servoing = self.stage == "servoing"
