@@ -2,12 +2,12 @@
 
 This ROS 2 package implements a Cartesian dynamical system (DS) controller for a simulated UR5e. The controller drives the end-effector toward a target and applies the obstacle modulation method from Khansari-Zadeh and Billard (2012) when obstacle avoidance is enabled. MoveIt Servo converts Cartesian velocity commands to joint motion.
 
-The Gazebo barrier is visual-only. Avoidance is handled by the DS controller, so these runs do not test contact collision handling. Clearance is measured for the end-effector point; it does not guarantee that every robot link clears the obstacle.
+The Gazebo barrier is visual only. Avoidance is handled by the DS controller. Clearance is measured for the end-effector point; it does not guarantee that every robot link clears the obstacle.
 
 ## Build
 
 ```bash
-cd ~/Projects/ur5e_sorting_ws
+cd <PROJECT_WORKSPACE>
 source /opt/ros/humble/setup.bash
 colcon build --packages-select ds_table_experiment
 source install/setup.bash
@@ -67,7 +67,7 @@ ros2 launch ds_table_experiment nominal_ab_clean.launch.py \
 The controller math tests can be run without ROS or a robot:
 
 ```bash
-cd ~/Projects/ur5e_sorting_ws/src/ds_table_experiment
+cd <PROJECT_WORKSPACE>/src/ds_table_experiment
 PYTHONPATH=scripts python3 -m unittest discover -s scripts/tests
 ```
 
@@ -75,4 +75,4 @@ PYTHONPATH=scripts python3 -m unittest discover -s scripts/tests
 
 S. M. Khansari-Zadeh and A. Billard, “A Dynamical System Approach to Realtime Obstacle Avoidance,” *Autonomous Robots*, 2012. [doi:10.1007/s10514-012-9287-y](https://doi.org/10.1007/s10514-012-9287-y).
 
-The accompanying evaluation brief also requests a 2–3 page technical note describing the implemented equations, integration approach, assumptions, results, failure cases, and controller computation time. That note is a separate deliverable from this README and the demonstration videos.
+Evaluation Report Link:
