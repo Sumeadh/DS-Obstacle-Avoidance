@@ -1,7 +1,13 @@
 <?xml version="1.0"?>
 <sdf version="1.7">
   <world name="table_experiment">
-  <gravity>0 0 0</gravity>
+    <gravity>0 0 0</gravity>
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros>
+        <namespace>/gazebo</namespace>
+      </ros>
+      <update_rate>30.0</update_rate>
+    </plugin>
     <include>
       <uri>model://sun</uri>
     </include>
@@ -28,7 +34,9 @@
     </model>
 
     <model name="experiment_obstacle">
-      <static>true</static>
+      <static>false</static>
+      <gravity>true</gravity>
+      <kinematic>true</kinematic>
       <pose>0.65 0.00 0.60 0 0 0</pose>
       <link name="barrier">
         <!-- <collision name="collision">
@@ -41,7 +49,7 @@
         <visual name="visual">
           <geometry>
             <box>
-              <size>0.70 0.10 0.20</size>
+              <size>0.70 0.10 0.40</size>
             </box>
           </geometry>
           <material>

@@ -10,7 +10,7 @@ from launch.actions import (
     OpaqueFunction,
 )
 from launch.conditions import IfCondition, UnlessCondition
-from launch.event_handlers import OnProcessExit, OnShutdown
+from launch.event_handlers import OnProcessExit, OnProcessStart, OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -23,17 +23,26 @@ import yaml
 def generate_launch_description():
     gazebo_ros = get_package_share_directory("gazebo_ros")
     experiment_share = get_package_share_directory("ds_table_experiment")
-    world = os.path.join(experiment_share, "worlds", "table.world")
+    world = PathJoinSubstitution([
+        FindPackageShare("ds_table_experiment"),
+        "experiments",
+        LaunchConfiguration("experiment"),
+        "table.world",
+    ])
+    controller_config_path = PathJoinSubstitution([
+        FindPackageShare("ds_table_experiment"),
+        "experiments",
+        LaunchConfiguration("experiment"),
+        "controller_params.yaml",
+    ])
     simulation_share = get_package_share_directory("ur_simulation_gazebo")
 
     controllers_file = os.path.join(
         simulation_share, "config", "ur_controllers.yaml"
     )
-    controller_config = load_yaml(
-        "ds_table_experiment", "config/controller_params.yaml"
-    )
-    controller_parameters = controller_config["controller"]["ros__parameters"]
-    initial_positions = controller_config["initial_positions"]
+    base_config = load_yaml("ds_table_experiment", "config/controller_params.yaml")
+    base_controller_parameters = base_config["controller"]["ros__parameters"]
+    initial_positions = base_config["initial_positions"]
     initial_positions_fd, initial_positions_file = tempfile.mkstemp(
         prefix="ds_table_initial_positions_", suffix=".yaml"
     )
@@ -239,7 +248,21 @@ def generate_launch_description():
         executable="Controller.py",
         name="nominal_ab_controller_clean",
         output="screen",
-        parameters=[controller_parameters, {"use_sim_time": True}],
+        parameters=[controller_config_path, {"use_sim_time": True}],
+    )
+    visualizer_node = Node(
+        package="ds_table_experiment",
+        executable="visualize_results.py",
+        name="ds_experiment_visualizer",
+        output="screen",
+        parameters=[
+            controller_config_path,
+            {
+                "use_sim_time": True,
+                "output_directory": LaunchConfiguration("visualization_output"),
+            },
+        ],
+        condition=UnlessCondition(LaunchConfiguration("setup_mode")),
     )
     start_experiment = RegisterEventHandler(
         OnProcessExit(
@@ -248,13 +271,48 @@ def generate_launch_description():
         ),
         condition=UnlessCondition(LaunchConfiguration("setup_mode")),
     )
+    target_change_publisher = Node(
+        package="ds_table_experiment",
+        executable="target_publisher.py",
+        name="experiment_target_change",
+        output="screen",
+        parameters=[{
+            "target_position": [0.623, -0.363, 0.543],
+            "delay_seconds": 4.5,
+            "planning_frame": "base_link",
+        }],
+        condition=IfCondition(LaunchConfiguration("auto_change_target")),
+    )
+
+    ## Second Target Publisher
+    second_target_publisher = Node(
+        package="ds_table_experiment",
+        executable="target_publisher.py",
+        name="experiment_second_target",
+        output="screen",
+        parameters=[{
+            "target_position": [0.523, 0.387, 0.543],  # your second coordinate
+            "delay_seconds": 10.0,
+            "planning_frame": "base_link",
+        }],
+        condition=IfCondition(LaunchConfiguration("auto_change_target")),
+    )
+
+    start_target_change = RegisterEventHandler(
+        OnProcessStart(
+            target_action=experiment_node,
+            on_start=[target_change_publisher, second_target_publisher],
+        ),
+        condition=IfCondition(LaunchConfiguration("auto_change_target")),
+    )
+
     add_table_node = Node(
         package="ds_table_experiment",
         executable="AddTable.py",
         name="add_experiment_obstacle",
         output="screen",
         parameters=[{
-            name: controller_parameters[name]
+            name: base_controller_parameters[name]
             for name in ("planning_frame", "obstacle_size", "obstacle_center")
         }],
         condition=IfCondition(LaunchConfiguration("setup_mode")),
@@ -263,6 +321,15 @@ def generate_launch_description():
         DeclareLaunchArgument("gui", default_value="true"),
         DeclareLaunchArgument("rviz", default_value="true"),
         DeclareLaunchArgument("setup_mode", default_value="false"),
+        DeclareLaunchArgument(
+            "experiment", default_value="experiment_2_obstacle_on_path",
+            description="Scenario folder under ds_table_experiment/experiments",
+        ),
+        DeclareLaunchArgument("auto_change_target", default_value="false"),
+        DeclareLaunchArgument(
+            "visualization_output",
+            default_value="/home/sumeadh/Projects/ur5e_sorting_ws/src/ds_table_experiment/results",
+        ),
         cleanup_positions_file,
         gazebo,
         robot_state_publisher,
@@ -270,6 +337,8 @@ def generate_launch_description():
         start_trajectory_controller,
         start_velocity_controller,
         start_experiment,
+        start_target_change,
+        visualizer_node,
         add_table_node,
         spawn_robot,
         moveit_launch,

@@ -6,9 +6,11 @@ import rclpy
 from algorithms.nominal_ds import (
     cap_velocity,
     compute_velocity,
-    modulate_velocity,
+    modulate_velocity_with_equilibrium,
+    obstacle_ellipsoid,
 )
 from geometry_msgs.msg import PointStamped, Pose, TwistStamped
+from gazebo_msgs.msg import ModelStates
 from moveit_msgs.msg import CollisionObject, ObjectColor, PlanningScene
 from moveit_msgs.srv import ApplyPlanningScene
 from rclpy.node import Node
@@ -26,6 +28,7 @@ class Controller(Node):
         for name in (
             "planning_frame",
             "end_effector_link",
+            "obstacle_enabled",
             "obstacle_size",
             "obstacle_center",
             "obstacle_safety_margin",
@@ -64,6 +67,9 @@ class Controller(Node):
         self.target_subscription = self.create_subscription(
             PointStamped, "/new_target", self.target_callback, 10
         )
+        self.model_states_subscription = self.create_subscription(
+            ModelStates, "/gazebo/model_states", self.model_states_callback, 10
+        )
         self.servo_steps = 0
         self.goal: tuple[float, float, float] | None = None
         self.minimum_obstacle_clearance = float("inf")
@@ -89,6 +95,7 @@ class Controller(Node):
         self.start()
 
     def start(self):
+        self.obstacle_enabled = bool(self.get_parameter("obstacle_enabled").value)
         self.obstacle_size = self.get_parameter("obstacle_size").value
         self.obstacle_center = self.get_parameter("obstacle_center").value
         self.obstacle_safety_margin = self.get_parameter(
@@ -132,7 +139,6 @@ class Controller(Node):
                 "or velocity parameters are invalid."
             )
             return
-        #self.add_obstacle()
         self.stage = "starting_servo"
         self.start_servo_client.call_async(
             Trigger.Request()
@@ -203,17 +209,38 @@ class Controller(Node):
                 f"Starting tool position: "
                 f"({position.x:.3f}, {position.y:.3f}, {position.z:.3f}) m."
             )
-            self.goal = tuple(float(value) for value in self.goal_position)
-            self.get_logger().info(
-                f"Initial target B: "
-                f"({self.goal[0]:.3f}, {self.goal[1]:.3f}, "
-                f"{self.goal[2]:.3f}) m."
-            )
+            if self.goal is None:
+                self.goal = tuple(float(value) for value in self.goal_position)
+                self.get_logger().info(
+                    f"Initial target B: "
+                    f"({self.goal[0]:.3f}, {self.goal[1]:.3f}, "
+                    f"{self.goal[2]:.3f}) m."
+                )
+            else:
+                self.get_logger().info(
+                    "Using target received during startup: "
+                    f"({self.goal[0]:.3f}, {self.goal[1]:.3f}, "
+                    f"{self.goal[2]:.3f}) m."
+                )
             self.stage = "servoing"
             self.servo_timer.reset()
             self.get_logger().info("Starting velocity control from A toward B.")
         except Exception as error:
             self.stop(str(error))
+
+    def model_states_callback(self, message: ModelStates):
+        """Track the obstacle's live Gazebo position for every DS update."""
+        try:
+            index = message.name.index("experiment_obstacle")
+        except ValueError:
+            return
+
+        pose = message.pose[index]
+        self.obstacle_center = (
+            float(pose.position.x),
+            float(pose.position.y),
+            float(pose.position.z),
+        )
 
     def target_callback(self, message: PointStamped):
         if message.header.frame_id and message.header.frame_id != self.planning_frame:
@@ -293,10 +320,11 @@ class Controller(Node):
                 transform.translation.z,
             )
 
-            clearance = self.obstacle_clearance(current)
-            self.minimum_obstacle_clearance = min(
-                self.minimum_obstacle_clearance, clearance
-            )
+            if self.obstacle_enabled:
+                clearance = self.obstacle_clearance(current)
+                self.minimum_obstacle_clearance = min(
+                    self.minimum_obstacle_clearance, clearance
+                )
 
             distance = hypot(
                 self.goal[0] - current[0],
@@ -315,37 +343,34 @@ class Controller(Node):
                 self.stop("Velocity control timed out before reaching the current target.")
                 return
 
-            velocity = compute_velocity(
-                current,
-                self.goal,
-                float(self.get_parameter("gain").value),
-                float(self.get_parameter("speed_limit").value),
-            )
+            gain = float(self.get_parameter("gain").value)
+            speed_limit = float(self.get_parameter("speed_limit").value)
 
-            # The experiment uses the current Z-stretched ellipsoid model.
-            top_of_box = self.obstacle_center[2] + (self.obstacle_size[2] / 2.0)
-            obstacle_semi_axes = (
-                (3.0 ** 0.5) * self.obstacle_size[0] / 2.0
-                + self.obstacle_safety_margin,
-                (3.0 ** 0.5) * self.obstacle_size[1] / 2.0
-                + self.obstacle_safety_margin,
-                top_of_box + self.obstacle_safety_margin,
-            )
-            obs_center_math = (
-                self.obstacle_center[0],
-                self.obstacle_center[1],
-                0.0,
-            )
-
-            velocity, _ = modulate_velocity(
-                current,
-                velocity,
-                obs_center_math,
-                obstacle_semi_axes,
-                safety_factor=self.obstacle_safety_factor,
-                reactivity=self.obstacle_reactivity,
-                tail_effect=self.get_parameter("obstacle_tail_effect").value,
-            )
+            if self.obstacle_enabled:
+                # Shared with visualize_results.py so plots show the real boundary.
+                obs_center_math, obstacle_semi_axes = obstacle_ellipsoid(
+                    self.obstacle_size,
+                    self.obstacle_center,
+                    self.obstacle_safety_margin,
+                )
+                velocity, _, recovered = modulate_velocity_with_equilibrium(
+                    current,
+                    self.goal,
+                    gain,
+                    speed_limit,
+                    obs_center_math,
+                    obstacle_semi_axes,
+                    float(self.get_parameter("control_period").value),
+                    safety_factor=self.obstacle_safety_factor,
+                    reactivity=self.obstacle_reactivity,
+                    tail_effect=self.get_parameter("obstacle_tail_effect").value,
+                )
+                if recovered:
+                    self.get_logger().warning(
+                        "Boundary equilibrium detected; applying tangential escape."
+                    )
+            else:
+                velocity = compute_velocity(current, self.goal, gain, speed_limit)
             velocity = cap_velocity(
                 velocity,
                 float(self.get_parameter("speed_limit").value),
@@ -371,7 +396,9 @@ class Controller(Node):
         else:
             self.get_logger().info("Final goal error: unavailable (no servo feedback).")
 
-        if self.minimum_obstacle_clearance != float("inf"):
+        if not self.obstacle_enabled:
+            self.get_logger().info("Obstacle avoidance disabled for nominal goal-reaching experiment.")
+        elif self.minimum_obstacle_clearance != float("inf"):
             self.get_logger().info(
                 "Minimum tool-point clearance from physical obstacle: "
                 f"{self.minimum_obstacle_clearance:.4f} m"

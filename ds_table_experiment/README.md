@@ -1,106 +1,78 @@
-# UR5e dynamical-system obstacle-avoidance experiments
+# UR5e Dynamical System Obstacle Avoidance
 
-This standalone ROS 2 package uses its own Gazebo world and the standard UR5e
-MoveIt configuration. It does not launch or modify the
-`sorting_description` application.
+This ROS 2 package implements a Cartesian dynamical system (DS) controller for a simulated UR5e. The controller drives the end-effector toward a target and applies the obstacle modulation method from Khansari-Zadeh and Billard (2012) when obstacle avoidance is enabled. MoveIt Servo converts Cartesian velocity commands to joint motion.
 
-The controller combines the nominal Cartesian dynamical system
-`xdot = gain * (goal - x)` with ellipsoid obstacle modulation. Gazebo
-initializes the robot at A before activating the joint-state broadcaster and
-velocity controller. Cartesian velocity commands are streamed through MoveIt
-Servo and `forward_velocity_controller`.
+The Gazebo barrier is visual-only. Avoidance is handled by the DS controller, so these runs do not test contact collision handling. Clearance is measured for the end-effector point; it does not guarantee that every robot link clears the obstacle.
 
-The Gazebo table and red barrier are visual-only in the supplied world
-(the barrier collision element is commented out). The DS controller performs
-the obstacle avoidance mathematically using the configured ellipsoid. The
-controller's `add_obstacle()` helper is retained, but is not called in the
-normal experiment launch; MoveIt Servo's scene collision checker therefore
-does not provide an independent barrier collision constraint in this mode.
-
-## Run
+## Build
 
 ```bash
 cd ~/Projects/ur5e_sorting_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select ds_table_experiment
 source install/setup.bash
-ros2 launch ds_table_experiment nominal_ab_clean.launch.py
 ```
 
-`setup_mode` defaults to `false`: it activates
-`forward_velocity_controller` and starts the velocity experiment using the
-joint pose and controller settings from `config/controller_params.yaml`.
-Set `setup_mode:=true` to activate
-`joint_trajectory_controller` for RViz setup; this adds the red obstacle to
-MoveIt's planning scene without starting the automatic velocity experiment.
-`nominal_ab.launch.py` remains an alias to this launch for compatibility.
+## Run the experiments
 
-The table is 0.70 m by 2.00 m with a 0.10 m-thick top. Its center is at
-`(0.65, 0.0, 0.45) m`, so the tabletop is at `z=0.50 m`. Gazebo also shows
-visual-only orange A and green B spheres at the configured start and target
-locations. Update their poses in `worlds/table.world` if the experiment
-geometry changes.
+Run one scenario at a time and stop the current launch with `Ctrl+C` before starting another.
 
-Tune the controller in `config/controller_params.yaml`: `gain`, `speed_limit`,
-`control_period`, `position_tolerance`, `maximum_steps`, the MoveIt obstacle
-dimensions and position, and `goal_offset` (relative X/Y/Z meters from the
-measured tool start). The controller sends linear velocity commands in X, Y,
-and Z; angular velocity remains zero. The Gazebo obstacle and table remain defined in
-`worlds/table.world`; keep the obstacle values synchronized if you change them.
-The `initial_positions` section in the same config sets the six robot joint
-angles in radians. The launch file supplies those values to the URDF's
-initial-position input and the controller/scene nodes.
-Use `gui:=false` to disable Gazebo's GUI or `rviz:=false` to disable RViz.
+| Experiment | Scenario | Launch command |
+| --- | --- | --- |
+| 1 | Goal reaching without obstacle modulation | `ros2 launch ds_table_experiment experiment_1_goal_reaching.launch.py` |
+| 2 | Obstacle on the direct path from A to B | `ros2 launch ds_table_experiment experiment_2_obstacle_on_path.launch.py` |
+| 3 | Obstacle away from the direct path from A to B | `ros2 launch ds_table_experiment experiment_3_obstacle_off_path.launch.py` |
+| 4 | Target changes while the robot is moving | `ros2 launch ds_table_experiment experiment_4_changing_target.launch.py` |
 
-The nominal velocity field runs at 50 Hz with a 0.04 m/s speed cap and a 5 mm
-goal tolerance. Servo's collision checking uses the red obstacle in MoveIt's
-planning scene; the tabletop is not a collision object.
+You can disable Gazebo's GUI or RViz with `gui:=false` or `rviz:=false`. The shared launch also accepts an `experiment` folder name, for example:
 
-## Code layout
+```bash
+ros2 launch ds_table_experiment nominal_ab_clean.launch.py \
+  experiment:=experiment_2_obstacle_on_path
+```
 
-- `scripts/algorithms/nominal_ds.py`: pure math for the nominal velocity field.
-- `scripts/Controller.py`: obstacle scene and velocity task flow.
-- `config/servo_velocity.yaml`: Servo's joint-velocity output configuration.
-- `config/controller_params.yaml`: experiment tuning and initial joint pose.
+Experiment 4 starts toward target B and publishes a new target during execution. The controller accepts targets on `/new_target` as `geometry_msgs/PointStamped` messages in `base_link`.
 
-The math can be unit tested without ROS or a robot:
+## Demonstration videos
+
+The recordings for the four validation scenarios are included in [`videos/`](videos/).
+
+| Experiment | Recording |
+| --- | --- |
+| 1. Goal reaching | [Watch the Experiment 1 recording](videos/experiment_1_goal_reaching.webm) |
+| 2. Obstacle on path | [Watch the Experiment 2 recording](videos/experiment_2_obstacle_on_path.webm) |
+| 3. Obstacle off path | [Watch the Experiment 3 recording](videos/experiment_3_obstacle_off_path.webm) |
+| 4. Changing target | [Watch the Experiment 4 recording](videos/experiment_4_changing_target.webm) |
+
+## Configuration and code
+
+Each scenario has its own Gazebo world and controller parameters under `experiments/`. Shared code and settings are organized as follows:
+
+- `scripts/Controller.py`: target tracking, obstacle modulation, and velocity commands.
+- `scripts/algorithms/nominal_ds.py`: nominal DS and obstacle modulation math.
+- `scripts/visualize_results.py` and `scripts/ds_plots.py`: live trajectory and controller plots.
+- `config/servo_velocity.yaml`: MoveIt Servo configuration.
+- `experiments/<scenario>/controller_params.yaml`: scenario-specific controller and robot start parameters.
+- `experiments/<scenario>/table.world`: scenario-specific Gazebo geometry.
+
+The controller reports the final end-effector-to-target error and minimum signed clearance from the physical box on shutdown. A negative clearance means the end-effector point entered the box. This clearance metric does not account for the robot's full body.
+
+The automatic visualizer can be given a different output directory:
+
+```bash
+ros2 launch ds_table_experiment nominal_ab_clean.launch.py \
+  visualization_output:=my_experiment_plots
+```
+
+The controller math tests can be run without ROS or a robot:
 
 ```bash
 cd ~/Projects/ur5e_sorting_ws/src/ds_table_experiment
 PYTHONPATH=scripts python3 -m unittest discover -s scripts/tests
 ```
 
-## Experiment 1: adaptation to a changing target
+## Research reference and remaining deliverable
 
-The controller starts toward the configured target B. While it is moving,
-publish a `geometry_msgs/PointStamped` message to `/new_target` in
-`base_link`. The controller updates its goal immediately and continues the
-same servo loop; when it reaches a target it holds position with zero velocity
-until another target arrives.
+S. M. Khansari-Zadeh and A. Billard, “A Dynamical System Approach to Realtime Obstacle Avoidance,” *Autonomous Robots*, 2012. [doi:10.1007/s10514-012-9287-y](https://doi.org/10.1007/s10514-012-9287-y).
 
-Example: after the robot has started moving, send target C two seconds later:
-
-```bash
-ros2 run ds_table_experiment target_publisher.py --ros-args \\
-  -p target_position:="[0.523, -0.363, 0.543]" \\
-  -p delay_seconds:=2.0
-```
-
-The publisher defaults to a 12 cm positive-X shift from B. Change
-`target_position` to test other target shifts. Start this publisher only after
-the controller has begun moving toward B; otherwise the initial startup may
-overwrite an early target with B.
-
-On shutdown, the controller reports the final tool-to-current-goal error and
-the minimum signed clearance of the tool point from the physical box. A
-negative clearance means the tool point entered the box; this is a point-to-box
-metric, not a full robot-body collision clearance.
-
-
-### Visualize the changed target in RViz
-
-The controller publishes the latest received target as a green 4 cm sphere on
-`/experiment/target_marker` (`visualization_msgs/Marker`). In RViz, set the
-Fixed Frame to the controller's `planning_frame` (normally `base_link`), add a
-**Marker** display, and select `/experiment/target_marker`. When `/new_target`
-is received, the sphere moves to the new target position.
+The accompanying evaluation brief also requests a 2–3 page technical note describing the implemented equations, integration approach, assumptions, results, failure cases, and controller computation time. That note is a separate deliverable from this README and the demonstration videos.

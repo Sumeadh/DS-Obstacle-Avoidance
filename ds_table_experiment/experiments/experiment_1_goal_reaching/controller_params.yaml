@@ -1,0 +1,29 @@
+/**:
+  ros__parameters:
+    control_period: 0.02
+    end_effector_link: tool0
+    gain: 0.75
+    goal_position:
+    - 0.403
+    - -0.363
+    - 0.543
+    maximum_steps: 3000
+    obstacle_center:
+    - 1.25
+    - 0.0
+    - 0.6
+    obstacle_reactivity: 1.0
+    obstacle_safety_factor:
+    - 1.0
+    - 1.0
+    - 1.0
+    obstacle_safety_margin: 0.1
+    obstacle_size:
+    - 0.7
+    - 0.1
+    - 0.4
+    obstacle_tail_effect: false
+    planning_frame: base_link
+    position_tolerance: 0.005
+    speed_limit: 0.1
+    obstacle_enabled: false
