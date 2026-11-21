@@ -50,7 +50,8 @@ Each scenario has its own Gazebo world and controller parameters under `experime
 
 - `scripts/Controller.py`: target tracking, obstacle modulation, and velocity commands.
 - `scripts/algorithms/nominal_ds.py`: nominal DS and obstacle modulation math.
-- `scripts/visualize_results.py` and `scripts/ds_plots.py`: live trajectory and controller plots.
+- `scripts/plotting/visualize_results.py`: live plotting node.
+- `scripts/plotting/ds_plots.py`: reusable plotting and geometry helpers.
 - `config/servo_velocity.yaml`: MoveIt Servo configuration.
 - `experiments/<scenario>/controller_params.yaml`: scenario-specific controller and robot start parameters.
 - `experiments/<scenario>/table.world`: scenario-specific Gazebo geometry.

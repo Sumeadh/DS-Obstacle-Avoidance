@@ -11,7 +11,12 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import numpy as np
 import rclpy
-from ds_plots import ControllerModel, draw_3d, draw_all_fields, draw_distance
+from plotting.ds_plots import (
+    ControllerModel,
+    draw_3d,
+    draw_all_fields,
+    draw_distance,
+)
 from gazebo_msgs.msg import ModelStates
 from geometry_msgs.msg import PointStamped, TwistStamped
 from rclpy.node import Node

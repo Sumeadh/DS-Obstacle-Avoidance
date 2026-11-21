@@ -9,14 +9,10 @@ from algorithms.nominal_ds import (
     modulate_velocity_with_equilibrium,
     obstacle_ellipsoid,
 )
-from geometry_msgs.msg import PointStamped, Pose, TwistStamped
+from geometry_msgs.msg import PointStamped, TwistStamped
 from gazebo_msgs.msg import ModelStates
-from moveit_msgs.msg import CollisionObject, ObjectColor, PlanningScene
-from moveit_msgs.srv import ApplyPlanningScene
 from rclpy.node import Node
 from rclpy.time import Time
-from shape_msgs.msg import SolidPrimitive
-from std_msgs.msg import ColorRGBA
 from visualization_msgs.msg import Marker
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
@@ -48,9 +44,6 @@ class Controller(Node):
         self.end_effector_link = self.get_parameter("end_effector_link").value
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.scene_client = self.create_client(
-            ApplyPlanningScene, "/apply_planning_scene"
-        )
         self.start_servo_client = self.create_client(
             Trigger, "/servo_node/start_servo"
         )
@@ -81,8 +74,7 @@ class Controller(Node):
         if self.stage != "waiting":
             return
         if not (
-            self.scene_client.service_is_ready()
-            and self.start_servo_client.service_is_ready()
+            self.start_servo_client.service_is_ready()
             and self.servo_commands.get_subscription_count() > 0
             and self.tf_buffer.can_transform(
                 self.planning_frame, self.end_effector_link, Time()
@@ -143,48 +135,6 @@ class Controller(Node):
         self.start_servo_client.call_async(
             Trigger.Request()
         ).add_done_callback(self.on_servo_started)
-
-    # Add only the red block to MoveIt's collision scene.
-    def add_obstacle(self):
-        scene = PlanningScene()
-        scene.is_diff = True
-        scene.robot_state.is_diff = True
-        obstacle = CollisionObject()
-        obstacle.header.frame_id = self.planning_frame
-        obstacle.id = "experiment_obstacle"
-        obstacle.operation = CollisionObject.ADD
-
-        box = SolidPrimitive()
-        box.type = SolidPrimitive.BOX
-        box.dimensions = list(self.obstacle_size)
-        pose = Pose()
-        pose.position.x, pose.position.y, pose.position.z = self.obstacle_center
-        pose.orientation.w = 1.0
-        obstacle.primitives = [box]
-        obstacle.primitive_poses = [pose]
-        color = ObjectColor()
-        color.id = obstacle.id
-        color.color = ColorRGBA(r=0.9, g=0.24, b=0.16, a=1.0)
-        scene.world.collision_objects = [obstacle]
-        scene.object_colors = [color]
-
-        request = ApplyPlanningScene.Request()
-        request.scene = scene
-        self.stage = "adding_obstacle"
-        self.scene_client.call_async(request).add_done_callback(
-            self.on_obstacle_added
-        )
-
-    def on_obstacle_added(self, future):
-        try:
-            if not future.result().success:
-                raise RuntimeError("MoveIt rejected the red obstacle.")
-            self.stage = "starting_servo"
-            self.start_servo_client.call_async(
-                Trigger.Request()
-            ).add_done_callback(self.on_servo_started)
-        except Exception as error:
-            self.stop(str(error))
 
     def on_servo_started(self, future):
         try:

@@ -11,20 +11,22 @@ install(
 install(
   PROGRAMS
     scripts/Controller.py
-    scripts/AddTable.py
     scripts/target_publisher.py
-    scripts/visualize_results.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(
-  FILES scripts/ds_plots.py
+  PROGRAMS scripts/plotting/visualize_results.py
   DESTINATION lib/${PROJECT_NAME}
+  RENAME visualize_results.py
 )
 
 install(
-  DIRECTORY scripts/algorithms
+  DIRECTORY scripts/algorithms scripts/plotting
   DESTINATION lib/${PROJECT_NAME}
+  FILES_MATCHING
+  PATTERN "*.py"
+  PATTERN "visualize_results.py" EXCLUDE
 )
 
 ament_package()

@@ -9,7 +9,7 @@ from launch.actions import (
     RegisterEventHandler,
     OpaqueFunction,
 )
-from launch.conditions import IfCondition, UnlessCondition
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit, OnProcessStart, OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
@@ -41,7 +41,6 @@ def generate_launch_description():
         simulation_share, "config", "ur_controllers.yaml"
     )
     base_config = load_yaml("ds_table_experiment", "config/controller_params.yaml")
-    base_controller_parameters = base_config["controller"]["ros__parameters"]
     initial_positions = base_config["initial_positions"]
     initial_positions_fd, initial_positions_file = tempfile.mkstemp(
         prefix="ds_table_initial_positions_", suffix=".yaml"
@@ -118,36 +117,17 @@ def generate_launch_description():
         ],
         output="screen",
     )
-    trajectory_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[
-            "joint_trajectory_controller",
-            "--controller-manager", "/controller_manager",
-            "--controller-manager-timeout", "120",
-        ],
-        output="screen",
-    )
-
     start_joint_state = RegisterEventHandler(
         OnProcessExit(
             target_action=spawn_robot,
             on_exit=[joint_state_spawner],
         )
     )
-    start_trajectory_controller = RegisterEventHandler(
-        OnProcessExit(
-            target_action=joint_state_spawner,
-            on_exit=[trajectory_spawner],
-        ),
-        condition=IfCondition(LaunchConfiguration("setup_mode")),
-    )
     start_velocity_controller = RegisterEventHandler(
         OnProcessExit(
             target_action=joint_state_spawner,
             on_exit=[velocity_spawner],
-        ),
-        condition=UnlessCondition(LaunchConfiguration("setup_mode")),
+        )
     )
     moveit_share = get_package_share_directory("ur_moveit_config")
     moveit_launch = IncludeLaunchDescription(
@@ -262,14 +242,12 @@ def generate_launch_description():
                 "output_directory": LaunchConfiguration("visualization_output"),
             },
         ],
-        condition=UnlessCondition(LaunchConfiguration("setup_mode")),
     )
     start_experiment = RegisterEventHandler(
         OnProcessExit(
             target_action=velocity_spawner,
             on_exit=[experiment_node],
         ),
-        condition=UnlessCondition(LaunchConfiguration("setup_mode")),
     )
     target_change_publisher = Node(
         package="ds_table_experiment",
@@ -306,21 +284,9 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("auto_change_target")),
     )
 
-    add_table_node = Node(
-        package="ds_table_experiment",
-        executable="AddTable.py",
-        name="add_experiment_obstacle",
-        output="screen",
-        parameters=[{
-            name: base_controller_parameters[name]
-            for name in ("planning_frame", "obstacle_size", "obstacle_center")
-        }],
-        condition=IfCondition(LaunchConfiguration("setup_mode")),
-    )
     return LaunchDescription([
         DeclareLaunchArgument("gui", default_value="true"),
         DeclareLaunchArgument("rviz", default_value="true"),
-        DeclareLaunchArgument("setup_mode", default_value="false"),
         DeclareLaunchArgument(
             "experiment", default_value="experiment_2_obstacle_on_path",
             description="Scenario folder under ds_table_experiment/experiments",
@@ -334,12 +300,10 @@ def generate_launch_description():
         gazebo,
         robot_state_publisher,
         start_joint_state,
-        start_trajectory_controller,
         start_velocity_controller,
         start_experiment,
         start_target_change,
         visualizer_node,
-        add_table_node,
         spawn_robot,
         moveit_launch,
         servo_node,
