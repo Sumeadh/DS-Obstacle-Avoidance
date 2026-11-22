@@ -42,7 +42,6 @@ source /opt/ros/humble/setup.bash
 colcon build --packages-select ds_table_experiment
 source install/setup.bash
 ```
-
 ## Run the experiments
 
 Run one scenario at a time and stop the current launch with `Ctrl+C` before starting another.
@@ -53,6 +52,7 @@ Run one scenario at a time and stop the current launch with `Ctrl+C` before star
 | 2 | Obstacle on the direct path from A to B | `ros2 launch ds_table_experiment experiment_2_obstacle_on_path.launch.py` |
 | 3 | Obstacle away from the direct path from A to B | `ros2 launch ds_table_experiment experiment_3_obstacle_off_path.launch.py` |
 | 4 | Target changes while the robot is moving | `ros2 launch ds_table_experiment experiment_4_changing_target.launch.py` |
+| 5 | Moving obstacle (additional experiment) | `ros2 launch ds_table_experiment experiment_2_obstacle_on_path.launch.py` |
 
 You can disable Gazebo's GUI or RViz with `gui:=false` or `rviz:=false`. The shared launch also accepts an `experiment` folder name, for example:
 
@@ -63,6 +63,7 @@ ros2 launch ds_table_experiment nominal_ab_clean.launch.py \
 
 Experiment 4 starts toward target B and publishes a new target during execution. The controller accepts targets on `/new_target` as `geometry_msgs/PointStamped` messages in `base_link`.
 
+Experiment 5 uses the same setup as Experiment 2. After launching the scenario, move the obstacle during execution using Gazebo's drag-and-drop functionality to observe how the controller reacts to changes in the obstacle position.
 ## Demonstration videos
 
 The recordings for the five experiments are included in the [`videos/`](videos/) directory.
@@ -111,4 +112,4 @@ S. M. Khansari-Zadeh and A. Billard, "A Dynamical System Approach to Realtime Ob
 
 ## Evaluation Report
 
-[View the Technical Evaluation Report]([https://drive.google.com/file/d/12V2doU9QNDBdbwo0nxecY3v4R-22Gp0/view?usp=sharing](https://drive.google.com/file/d/12V2doU9QNDBdbwo0nxecyX3v4R-22Gp0/view?usp=drive_link))
+[View the Technical Evaluation Report](https://drive.google.com/file/d/12V2doU9QNDBdbwo0nxecyX3v4R-22Gp0/view?usp=sharing)
