@@ -4,6 +4,36 @@ This ROS 2 package implements a Cartesian dynamical system (DS) controller for a
 
 The Gazebo barrier is visual only. Avoidance is handled by the DS controller. Clearance is measured for the end-effector point; it does not guarantee that every robot link clears the obstacle.
 
+## Dependencies
+
+- Ubuntu 22.04
+- ROS 2 Humble
+- Gazebo Classic
+- MoveIt 2 and MoveIt Servo
+- Universal Robots `ur_description` package
+
+### UR5e Robot Model
+
+This project uses the official UR5e robot description provided by Universal Robots.
+
+Install it using:
+
+```bash
+sudo apt update
+sudo apt install ros-humble-ur-description
+```
+
+Source ROS 2 and verify that the package is available:
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 pkg prefix ur_description
+```
+
+The experiment launch files use the UR5e model (`ur_type:=ur5e`). No physical robot is required; the manipulator runs in Gazebo.
+
+For additional information, refer to the [official Universal Robots ROS 2 Description repository](https://github.com/UniversalRobots/Universal_Robots_ROS2_Description).
+
 ## Build
 
 ```bash
@@ -28,21 +58,22 @@ You can disable Gazebo's GUI or RViz with `gui:=false` or `rviz:=false`. The sha
 
 ```bash
 ros2 launch ds_table_experiment nominal_ab_clean.launch.py \
-  experiment:=experiment_2_obstacle_on_path
+    experiment:=experiment_2_obstacle_on_path
 ```
 
 Experiment 4 starts toward target B and publishes a new target during execution. The controller accepts targets on `/new_target` as `geometry_msgs/PointStamped` messages in `base_link`.
 
 ## Demonstration videos
 
-The recordings for the four validation scenarios are included in [`videos/`](videos/).
+The recordings for the five experiments are included in the [`videos/`](videos/) directory.
 
 | Experiment | Recording |
 | --- | --- |
-| 1. Goal reaching | [Watch the Experiment 1 recording](videos/experiment_1_goal_reaching.webm) |
-| 2. Obstacle on path | [Watch the Experiment 2 recording](videos/experiment_2_obstacle_on_path.webm) |
-| 3. Obstacle off path | [Watch the Experiment 3 recording](videos/experiment_3_obstacle_off_path.webm) |
-| 4. Changing target | [Watch the Experiment 4 recording](videos/experiment_4_changing_target.webm) |
+| 1. Goal reaching | [Watch Experiment 1](videos/experiment_1_goal_reaching.webm) |
+| 2. Obstacle on path | [Watch Experiment 2](videos/experiment_2_obstacle_on_path.webm) |
+| 3. Obstacle off path | [Watch Experiment 3](videos/experiment_3_obstacle_off_path.webm) |
+| 4. Changing target | [Watch Experiment 4](videos/experiment_4_changing_target.webm) |
+| 5. Moving obstacle (Extra) | [Watch Experiment 5](videos/experiment_5_moving_obstacle.webm) |
 
 ## Configuration and code
 
@@ -62,7 +93,7 @@ The automatic visualizer can be given a different output directory:
 
 ```bash
 ros2 launch ds_table_experiment nominal_ab_clean.launch.py \
-  visualization_output:=my_experiment_plots
+    visualization_output:=my_experiment_plots
 ```
 
 The controller math tests can be run without ROS or a robot:
@@ -72,8 +103,12 @@ cd <PROJECT_WORKSPACE>/src/ds_table_experiment
 PYTHONPATH=scripts python3 -m unittest discover -s scripts/tests
 ```
 
-## Research reference and remaining deliverable
+## Research reference
 
-S. M. Khansari-Zadeh and A. Billard, “A Dynamical System Approach to Realtime Obstacle Avoidance,” *Autonomous Robots*, 2012. [doi:10.1007/s10514-012-9287-y](https://doi.org/10.1007/s10514-012-9287-y).
+S. M. Khansari-Zadeh and A. Billard, "A Dynamical System Approach to Realtime Obstacle Avoidance," *Autonomous Robots*, 2012.
 
-Evaluation Report Link:
+[DOI: 10.1007/s10514-012-9287-y](https://doi.org/10.1007/s10514-012-9287-y)
+
+## Evaluation Report
+
+[View the Technical Evaluation Report]([https://drive.google.com/file/d/12V2doU9QNDBdbwo0nxecY3v4R-22Gp0/view?usp=sharing](https://drive.google.com/file/d/12V2doU9QNDBdbwo0nxecyX3v4R-22Gp0/view?usp=drive_link))
